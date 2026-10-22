@@ -1,4 +1,4 @@
-# Cryptocode mining pools — hoe het staat (bijgewerkt 16 oktober 2026)
+# Cryptocode mining pools — hoe het staat (bijgewerkt 22 oktober 2026)
 
 Lees dit vóór je iets aan de pools, de Umbrel of de VPS verandert.
 
@@ -22,20 +22,21 @@ Toegang: VPS `ssh -i ~/.ssh/id_ed25519_vps ubuntu@57.131.149.173` (Tailscale `po
 
 ## Hoe de 1% fee werkt
 
-- **BTC:** standaard ckpool heeft geen operator-fee; de enige "donation" gaat naar een in de code vastgezet adres van de ckpool-ontwikkelaar. Daarom draait Bassin op een eigen build `cryptocode/ckpool-solo-fee:v1.1.1` (Dockerfile in `~/ckpool-fee` op de Umbrel) waarin dat adres vervangen is door ons BTC-adres, plus `"donation" : 1.0` in `~/umbrel/app-data/bassin/data/config/ckpool.conf`. Controle: `ckpool.log` moet `1.0 percent donation to bc1qtr0j…` tonen.
+- **BTC:** standaard ckpool heeft geen operator-fee; de enige "donation" gaat naar een in de code vastgezet adres van de ckpool-ontwikkelaar. Daarom draaien Bassin en btc-rental op een eigen build `cryptocode/ckpool-solo-fee:v1.2.0` (sinds 22 okt; Dockerfile in `~/ckpool-fee-v1.2.0` op de Umbrel, kopie in `ckpool-fee/` in deze repo) waarin dat adres vervangen is door ons BTC-adres, plus `"donation" : 1.0` in `~/umbrel/app-data/bassin/data/config/ckpool.conf`. Controle: `ckpool.log` moet `1.0 percent donation to bc1qtr0j…` tonen.
 - **BCH:** asicseer-pool kent `pool_fee` (naar `bchaddress`), maar het startscript van LoneStrike schrijft bij elke start `0.0`. Daarom is `~/umbrel/app-data/sslabs-solostrike-cash/entrypoint-fee.sh` (kopie met 1.0) over `/entrypoint.sh` gemount in docker-compose.yml. `bch-rental` gebruikt een eigen kopie `~/bch-rental-entrypoint.sh`.
 
 ## ⚠️ Updates — dit gaat fout als je het vergeet
 
-Een update van **Bassin**, **LoneStrike** of **Bitcoin Cash Node** in de Umbrel App Store zet `docker-compose.yml` terug:
+Een update van **Bassin**, **LoneStrike**, **Bitcoin Cash Node** of **Bitcoin Node** in de Umbrel App Store zet `docker-compose.yml` terug:
 - Bassin draait dan weer de officiële image, maar `donation: 1.0` blijft in de config staan → **1% gaat naar de ckpool-ontwikkelaar in plaats van naar ons.**
 - LoneStrike draait dan weer met `pool_fee: 0.0` → geen fee.
 - Bitcoin Cash Node krijgt weer `-txindex=1` en verliest `-prune` → de BCH-node **start niet** ("-reindex to go back to unpruned mode") en LoneStrike en bch-rental staan stil. De bewaking meldt dan dat de BCH-node niet reageert.
+- Bitcoin Node verliest de geheugengrens van 3 GB → de node staat in Umbrel weer op ~6 GB (vooral cache van de UTXO-database). Niet gevaarlijk, wel weer hoog.
 
-**Na élke update van Bassin, LoneStrike of Bitcoin Cash Node:** log in op de Umbrel en draai `~/fees-herstellen.sh`. Dat zet alle drie terug, herstart en toont de controle (BTC `1.0 percent donation to bc1qtr0j…`, BCH en BCH rental `"pool_fee": 1.0`, `BCH-node: -prune=10000`). Het BCH-deel staat in `~/bch-prune-herstellen.sh` (kopie in `scripts/` in deze repo).
-- Meldt het script "LET OP: update gebruikt docker-ckpool-solo:vX": de officiële ckpool is naar een nieuwe versie gegaan. Het script zet onze v1.1.1 terug; bouw daarna een nieuwe versie (in `~/ckpool-fee/Dockerfile` de `git checkout`-tag aanpassen, opnieuw bouwen met `--build-arg FEE_ADDR=bc1qtr0j4w275ndkyrh5396rzdvmtakqymcp046cht`, controleren dat de build faalt als het oude adres niet gevonden wordt) en herstart `bassin` én `btc-rental`.
+**Na élke update van Bassin, LoneStrike, Bitcoin Cash Node of Bitcoin Node:** log in op de Umbrel en draai `~/fees-herstellen.sh`. Dat zet alles terug, herstart waar nodig en toont de controle (BTC `1.0 percent donation to bc1qtr0j…`, BCH en BCH rental `"pool_fee": 1.0`, `BCH-node: -prune=10000`, `BTC-node: geheugengrens 3 GB`). Het BCH-deel staat in `~/bch-prune-herstellen.sh`, het BTC-geheugendeel in `~/btc-geheugen-herstellen.sh` (kopieën in `scripts/` in deze repo).
+- Meldt het script "LET OP: update gebruikt docker-ckpool-solo:vX": de officiële ckpool is naar een nieuwe versie gegaan. Het script zet onze v1.2.0 terug. Kijk bij de bron (bitbucket.org/ckolivas/ckpool) of de nieuwe versie iets oplevert. Zo ja: kopieer `~/ckpool-fee-v1.2.0` naar `~/ckpool-fee-<versie>`, zet in de Dockerfile `VERSION` en `COMMIT` (de commit van die tag) en draai `sudo bash ~/ckpool-upgrade.sh <versie>` (`scripts/ckpool-upgrade.sh`). Dat bouwt het image (faalt als het adres van de ontwikkelaar niet vervangen is), zet eerst btc-rental en dan Bassin om, en zet een pool terug op het oude image als de fee-regel niet verschijnt. Pas daarna in `~/fees-herstellen.sh` en `~/btc-rental-start.sh` de versie aan.
 - `btc-rental` en `bch-rental` zijn losse containers (`--restart unless-stopped`), niet uit de App Store. Die worden nooit automatisch bijgewerkt en een app-update raakt ze niet.
-- **Nooit "Alles bijwerken"** in de Umbrel als Bassin, LoneStrike of Bitcoin Cash Node in de lijst staan: werk die apart bij en draai daarna `~/fees-herstellen.sh`. De AI-agent (Claude Code via Umbrel MCP) werkt Bassin en LoneStrike nooit bij.
+- **Nooit "Alles bijwerken"** in de Umbrel als Bassin, LoneStrike, Bitcoin Cash Node of Bitcoin Node in de lijst staan: werk die apart bij en draai daarna `~/fees-herstellen.sh`. De AI-agent (Claude Code via Umbrel MCP) werkt Bassin en LoneStrike nooit bij.
 
 ## Overig
 
@@ -62,6 +63,14 @@ Een update van **Bassin**, **LoneStrike** of **Bitcoin Cash Node** in de Umbrel 
 - VPS: Caddy op 80/443 (`/etc/caddy/Caddyfile`), alleen `https://pool.cryptocodes.eu/public/*` → Umbrel 100.111.67.28:22570. Andere paden geven een tekstregel. Mining-poorten (HAProxy) staan er los van.
 - API: `/public/summary` (totalen per pool, geen adressen) en `/public/miner/<adres>` (één adres; merged = DOGE-adres). 30 s cache, 30 verzoeken/min per IP.
 - Website: sectie "Live stats" op /minen/solo-pool (`src/components/SoloPoolStats.tsx`, 9 talen), CSP connect-src bevat pool.cryptocodes.eu. Live gecontroleerd op cryptocodes.eu en cryptocode.nl.
+
+## Stand 22 oktober 2026
+
+- **BTC-node geheugengrens 3 GB** (+1 GB swap) sinds 22 okt 17:40 NL. Bitcoin Core leest de UTXO-database (~11 GB) via mmap; wat gelezen was bleef als cache bij de app staan en Umbrel telde dat mee (6,4 GB, waarvan 1,9 GB echt in gebruik). Nu 2,3 GB in Umbrel. Zonder herstart gezet (`docker update` in stappen 8 → 5 → 3 GB) en vastgelegd als `mem_limit`/`memswap_limit` bij service `app` in `~/umbrel/app-data/bitcoin/docker-compose.yml`. Script: `scripts/btc-geheugen-herstellen.sh` (zet de grens op 16 GB terug als de node in de knel komt).
+- **ckpool v1.2.0** op Bassin en btc-rental (22 okt 17:52 NL, Bassin ±18 s stil, miners vanzelf terug). v1.1.1 groeide ~80–100 MB per dag per pool, ook zonder miners: na de herstart van 16 okt weer 490–640 MB in 6 dagen (18.044 blokvoorstellen). v1.2.0 slaat in solomodus de transactielijst per blokvoorstel over (commit 15f4de3f), vervangt jansson door yyjson en bevat enkele lekfixes. Onze instellingen (`btcd`, `btcsig`, `donation`, `mindiff`, `startdiff`, `maxdiff`, `zmqblock`, `logdir`), de opties `-k -B -c`, de statusbestanden en de logregel `1.0 percent donation to …` zijn ongewijzigd (nagekeken in de bron). Na de uitrol: `check_pools.py` 6× OK (99% / 1%). Umbrels eigen Bassin-app (2.1.4) gebruikt nog v1.1.1.
+- **ckpool-geheugen meten**: `scripts/ckpool-geheugen-meten.sh` draait 14 dagen op de Umbrel en schrijft elke 10 min het geheugen van beide ckpools naar `~/ckpool-geheugen.log` (UTC). Start 130 MB, na 12 min ~215 MB. Blijft het daarna groeien: wekelijks herstarten met `~/pools-herstart.sh`.
+- **Extra munten (onderzocht 22 okt)**: DigiByte kan niet merge-minen (geen AuxPoW in DigiByte Core v9.26.7). Onder LTC kunnen wel BELLS (chain id 16), DINGO (50), LKY (8211), JKC (8224), SHIC (74) en TRMP (168); CRC is dood. Per blok €0,01–0,19 (koersen 22 okt), bij ~2 GH/s één blok per 1–2,5 jaar per munt: alleen interessant als reclame. BELLS is de bekendste en past met DOGE (98) en PEP (63) in een boom van 4. DINGO heeft dezelfde adresbytes als DOGE.
+- Repo hernoemd van `umbrel-ecash` naar `umbrel-pools` (22 okt). Oude adressen sturen door, ook die van de App Store op de Umbrel (`andreashetem-cloud/umbrel-cryptocode`).
 
 ## Stand 16 oktober 2026 (nodes en apps)
 
