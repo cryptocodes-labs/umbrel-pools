@@ -61,6 +61,7 @@ Een update van **Bassin**, **LoneStrike**, **Bitcoin Cash Node** of **Bitcoin No
 ## Publieke stats (live sinds 26-09-2026)
 
 - VPS: Caddy op 80/443 (`/etc/caddy/Caddyfile`), alleen `https://pool.cryptocodes.eu/public/*` → Umbrel 100.111.67.28:22570. Andere paden geven een tekstregel. Mining-poorten (HAProxy) staan er los van.
+- Sinds 23-10-2026 heeft Caddy ook `btc.pool`, `bch.pool`, `doge.pool` en `rental.pool.cryptocodes.eu`: eigen Let's Encrypt-certificaat, en in een browser een 301 naar `https://pool.cryptocodes.eu{uri}`. Daarvoor faalde HTTPS op die namen (geen certificaat), terwijl HSTS op cryptocodes.eu met `includeSubDomains` (sinds 22-10) browsers naar HTTPS dwingt. Reservekopie van de oude instelling: `/etc/caddy/Caddyfile.bak-20261023`. Komt er een nieuwe stratumnaam bij in de DNS, zet hem dan ook in dit Caddy-blok.
 - API: `/public/summary` (totalen per pool, geen adressen) en `/public/miner/<adres>` (één adres; merged = DOGE-adres). 30 s cache, 30 verzoeken/min per IP.
 - Website: sectie "Live stats" op /minen/solo-pool (`src/components/SoloPoolStats.tsx`, 9 talen), CSP connect-src bevat pool.cryptocodes.eu. Live gecontroleerd op cryptocodes.eu en cryptocode.nl.
 
