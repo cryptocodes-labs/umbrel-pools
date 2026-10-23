@@ -19,6 +19,9 @@ docker build -q -t "$IMG" "$DIR"
 
 touch "$DIR/watchdog.log" "$DIR/config"
 chown 1000:1000 "$DIR/watchdog.log" "$DIR/config"
+# Map met de systeemcijfers voor de site (systeem.json); het pool-overzicht
+# mount alleen deze map, niet de config met het ntfy-topic.
+mkdir -p "$DIR/publiek"
 
 docker rm -f node-watchdog >/dev/null 2>&1 || true
 docker run -d --name node-watchdog --restart unless-stopped \
@@ -28,8 +31,12 @@ docker run -d --name node-watchdog --restart unless-stopped \
   -v "$DIR":/state \
   -v /home/umbrel/btc-rental/logs:/logs/btc-rental \
   -v /home/umbrel/umbrel/app-data/bassin/data/www:/logs/bassin \
+  -v /home/umbrel/umbrel/app-data:/appdata:ro \
+  -v /sys/devices/virtual/powercap:/powercap:ro \
   "$IMG" >/dev/null
 
 sleep 5
 echo "== node-watchdog draait:"; docker ps --filter name=node-watchdog --format '  {{.Names}} {{.Status}}'
 echo "== eerste regels:"; tail -n 20 "$DIR/watchdog.log"
+sleep 60
+echo "== systeemcijfers (na een minuut):"; cat "$DIR/publiek/systeem.json" 2>/dev/null || echo "  nog niet geschreven"

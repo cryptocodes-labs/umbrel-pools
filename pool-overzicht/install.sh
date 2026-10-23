@@ -17,6 +17,10 @@ grep -E '^PEP_RPC_(HOST|PORT|USER|PASSWORD)=' "$HOME/umbrel/app-data/doge-dogeco
 chmod 600 "$PEPENV"
 echo "Pepecoin-gegevens: $(grep -c . "$PEPENV") van 4 regels"
 
+# Systeemcijfers van de node-watchdog (/public/systeem); de map bestaat ook als de
+# watchdog nog niet is bijgewerkt, dan geeft de route gewoon 404.
+mkdir -p "$HOME/node-watchdog/publiek"
+
 sudo docker rm -f pool-overzicht >/dev/null 2>&1 || true
 sudo docker run -d --name pool-overzicht --restart unless-stopped \
   --network "$NET" -p 22570:3000 --user 0 \
@@ -27,6 +31,7 @@ sudo docker run -d --name pool-overzicht --restart unless-stopped \
   -v "$HOME/btc-rental/logs":/src/btc-rental:ro \
   -v "$HOME/umbrel/app-data/sslabs-solostrike-cash/data":/src/bch:ro \
   -v "$HOME/bch-rental":/src/bch-rental:ro \
+  -v "$HOME/node-watchdog/publiek":/src/systeem:ro \
   --entrypoint node cryptocode/doge-public:1.7.0 /app/overzicht.js >/dev/null
 
 if [ -n "$PRIVNET" ] && [ "$PRIVNET" != "$NET" ]; then
@@ -43,3 +48,6 @@ for p in d["pools"]:
 PY
 echo
 echo "Open: http://192.168.1.149:22570"
+curl -s http://localhost:22570/public/summary | python3 -c "import json,sys; [print(p['id'], 'pep:', json.dumps(p.get('pep'))) for p in json.load(sys.stdin)['pools'] if p.get('pep')]"
+echo
+curl -s http://localhost:22570/public/systeem | head -c 400; echo

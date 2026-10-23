@@ -5,7 +5,8 @@
 // Leest alleen (read-only mounts en GET-verzoeken), verandert niets aan de pools.
 //   /          de pagina, ververst elke 30 s (alleen op het eigen netwerk)
 //   /api       dezelfde cijfers als JSON (alleen op het eigen netwerk)
-//   /public/*  totalen en één adres op verzoek (via de proxy, publiek)
+//   /public/*  totalen en één adres op verzoek (via de proxy, publiek), en
+//              /public/systeem: de cijfers van de mini-pc zelf (node-watchdog)
 //
 // Bronnen:
 //   ckpool (Bassin, btc-rental):   <logdir>/pool/pool.status en <logdir>/users/<adres>
@@ -358,6 +359,37 @@ function limited(req) {
   return h.n > 30;
 }
 
+// Systeemcijfers van de mini-pc (sinds 23-10-2026): de node-watchdog schrijft
+// elke minuut systeem.json, install.sh mount die map op /src/systeem. Hier
+// gaan alleen getallen door, veld voor veld; wat geen getal is, wordt null.
+// Ouder dan tien minuten heet niet meer actueel (watchdog weg of gestopt).
+const SYSTEEM_FILE = process.env.SYSTEEM_FILE || '/src/systeem/systeem.json';
+const NODE_MUNTEN = ['BTC', 'BCH', 'LTC', 'DOGE', 'PEP'];
+function publicSysteem() {
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(SYSTEEM_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+  const n = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const tijd = n(raw.tijd);
+  const cpu = raw.cpu || {};
+  const geheugen = raw.geheugen || {};
+  const schijf = raw.schijf || {};
+  return {
+    tijd,
+    actueel: tijd !== null && Date.now() - tijd < 10 * 60 * 1000,
+    uptimeS: n(raw.uptimeS),
+    cpu: { belasting: n(cpu.belasting), tempC: n(cpu.tempC), watt: n(cpu.watt) },
+    geheugen: { totaal: n(geheugen.totaal), gebruikt: n(geheugen.gebruikt) },
+    schijf: { totaal: n(schijf.totaal), gebruikt: n(schijf.gebruikt) },
+    nodes: (Array.isArray(raw.nodes) ? raw.nodes : [])
+      .filter((x) => x && NODE_MUNTEN.includes(x.munt))
+      .map((x) => ({ munt: x.munt, geheugen: n(x.geheugen), schijf: n(x.schijf) })),
+  };
+}
+
 function send(res, code, body, extra = {}) {
   res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=30', ...extra });
   res.end(JSON.stringify(body));
@@ -377,6 +409,10 @@ http.createServer(async (req, res) => {
       if (!url.pathname.startsWith('/public/')) return send(res, 404, { fout: 'onbekend' });
       if (req.method === 'OPTIONS') return send(res, 204, {});
       if (limited(req)) return send(res, 429, { fout: 'te veel verzoeken' });
+      if (url.pathname === '/public/systeem') {
+        const s = publicSysteem();
+        return s ? send(res, 200, s) : send(res, 404, { fout: 'geen systeemcijfers' });
+      }
       const d = await cached();
       if (url.pathname === '/public/summary') return send(res, 200, publicSummary(d));
       const m = /^\/public\/miner\/([A-Za-z0-9:]{20,100})$/.exec(decodeURIComponent(url.pathname));
