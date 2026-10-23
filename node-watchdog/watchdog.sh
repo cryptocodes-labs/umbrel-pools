@@ -143,6 +143,92 @@ logguard() {
   fi
 }
 
+# --- Systeemcijfers voor de site (sinds 23-10-2026) --------------------------
+# Elke ronde schrijft de watchdog $PUBLIEK/systeem.json: uptime, belasting en
+# temperatuur van de processor, het verbruik van de processor (RAPL, als dat
+# leesbaar is), geheugen en schijf van de hele machine, en per node geheugen
+# (elke 5 rondes, docker stats) en schijf (elke 30 rondes, du op de app-map).
+# Het pool-overzicht geeft dat bestand door op /public/systeem; de solo-
+# poolpagina op cryptocode.nl toont het in "Waar de pools op draaien".
+# Alleen totalen: geen adressen, geen IP's, geen namen van bestanden.
+PUBLIEK=$STATE/publiek
+mkdir -p "$PUBLIEK"
+# munt:container:map-in-/appdata
+NODE_CTRS="BTC:bitcoin_app_1:bitcoin BCH:bitcoin-cash-node_bitcoind_1:bitcoin-cash-node LTC:doge-litecoin-node_litecoind_1:doge-litecoin-node DOGE:doge-dogecoin-node_dogecoind_1:doge-dogecoin-node PEP:doge-pepecoin-node_pepecoind_1:doge-pepecoin-node"
+declare -A node_ram node_schijf
+ronde=0
+prev_tot="" prev_idle="" prev_e="" prev_et=""
+
+# "2.301GiB" (docker stats) naar bytes.
+bytes_van() {
+  awk -v v="$1" 'BEGIN { n = v + 0; u = v; sub(/^[0-9.]+/, "", u); m = 1;
+    if (u == "KiB") m = 1024; else if (u == "MiB") m = 1048576; else if (u == "GiB") m = 1073741824;
+    else if (u == "TiB") m = 1099511627776; else if (u == "kB") m = 1e3; else if (u == "MB") m = 1e6;
+    else if (u == "GB") m = 1e9; printf "%.0f", n * m }'
+}
+# Alleen een getal mag het JSON-bestand in, anders null.
+num() { if [[ "${1:-}" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then echo "$1"; else echo null; fi; }
+
+systeem() {
+  local now u n s i w irq sirq st tot idle belasting="" uptime memtot memavail dtot="" dused="" temp="" watt="" f e
+  now=$(date +%s)
+  read -r _ u n s i w irq sirq st _ < /proc/stat
+  tot=$(( u + n + s + i + w + irq + sirq + st )); idle=$(( i + w ))
+  if [ -n "$prev_tot" ] && [ "$tot" -gt "$prev_tot" ]; then
+    belasting=$(awk -v a=$(( tot - prev_tot )) -v b=$(( idle - prev_idle )) 'BEGIN { printf "%.3f", (a - b) / a }')
+  fi
+  prev_tot=$tot; prev_idle=$idle
+  uptime=$(cut -d' ' -f1 /proc/uptime | cut -d. -f1)
+  memtot=$(awk '/^MemTotal:/ { printf "%.0f", $2 * 1024 }' /proc/meminfo)
+  memavail=$(awk '/^MemAvailable:/ { printf "%.0f", $2 * 1024 }' /proc/meminfo)
+  read -r dtot dused < <(df -P -B1 "$STATE" 2>/dev/null | awk 'NR == 2 { print $2, $3 }')
+  for h in /sys/class/hwmon/hwmon*; do
+    if [ "$(cat "$h/name" 2>/dev/null)" = "k10temp" ]; then temp=$(awk '{ printf "%.1f", $1 / 1000 }' "$h/temp1_input"); fi
+  done
+  # Verbruik van de processor (package), alleen als RAPL leesbaar is
+  # (install.sh mount /sys/devices/virtual/powercap op /powercap).
+  for f in /powercap/intel-rapl/intel-rapl:0/energy_uj /powercap/intel-rapl:0/energy_uj; do
+    [ -r "$f" ] || continue
+    if e=$(cat "$f" 2>/dev/null); then
+      if [ -n "$prev_e" ] && [ "$e" -ge "$prev_e" ] && [ "$now" -gt "$prev_et" ]; then
+        watt=$(awk -v d=$(( e - prev_e )) -v t=$(( now - prev_et )) 'BEGIN { printf "%.1f", d / 1e6 / t }')
+      fi
+      prev_e=$e; prev_et=$now
+    fi
+    break
+  done
+  if [ $(( ronde % 5 )) -eq 0 ]; then
+    local ctrs=() nd munt ctr map naam mem
+    for nd in $NODE_CTRS; do IFS=: read -r munt ctr map <<< "$nd"; exists "$ctr" && ctrs+=("$ctr"); done
+    if [ ${#ctrs[@]} -gt 0 ]; then
+      while read -r naam mem; do
+        for nd in $NODE_CTRS; do
+          IFS=: read -r munt ctr map <<< "$nd"
+          [ "$naam" = "$ctr" ] && node_ram[$munt]=$(bytes_van "$mem")
+        done
+      done < <(docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' "${ctrs[@]}" 2>/dev/null | awk '{ print $1, $2 }')
+    fi
+  fi
+  if [ $(( ronde % 30 )) -eq 0 ]; then
+    for nd in $NODE_CTRS; do
+      IFS=: read -r munt ctr map <<< "$nd"
+      [ -d "/appdata/$map" ] && node_schijf[$munt]=$(nice -n 19 du -sb "/appdata/$map" 2>/dev/null | cut -f1)
+    done
+  fi
+  ronde=$(( ronde + 1 ))
+  local nodes="" sep="" gebruikt=""
+  for nd in $NODE_CTRS; do
+    IFS=: read -r munt ctr map <<< "$nd"
+    nodes+="$sep{\"munt\":\"$munt\",\"geheugen\":$(num "${node_ram[$munt]:-}"),\"schijf\":$(num "${node_schijf[$munt]:-}")}"
+    sep=","
+  done
+  [ -n "$memtot" ] && [ -n "$memavail" ] && gebruikt=$(( memtot - memavail ))
+  printf '{"tijd":%s,"uptimeS":%s,"cpu":{"belasting":%s,"tempC":%s,"watt":%s},"geheugen":{"totaal":%s,"gebruikt":%s},"schijf":{"totaal":%s,"gebruikt":%s},"nodes":[%s]}\n' \
+    "$(( now * 1000 ))" "$(num "$uptime")" "$(num "$belasting")" "$(num "$temp")" "$(num "$watt")" \
+    "$(num "$memtot")" "$(num "$gebruikt")" "$(num "$dtot")" "$(num "$dused")" "$nodes" \
+    > "$PUBLIEK/systeem.json.tmp" && mv "$PUBLIEK/systeem.json.tmp" "$PUBLIEK/systeem.json"
+}
+
 log "node-watchdog gestart (interval ${INTERVAL}s, herstart na ${FAILS_BEFORE_RESTART} fouten, cooldown ${RESTART_COOLDOWN}s)"
 for c in bitcoin_app_1 bitcoin-cash-node_bitcoind_1 doge-dogecoin-node_dogecoind_1 doge-litecoin-node_litecoind_1 \
          doge-pepecoin-node_pepecoind_1 bassin_ckpool_1 btc-rental bch-rental sslabs-solostrike-cash_pool_1 \
@@ -192,6 +278,9 @@ while true; do
   elif [ -n "$temp" ]; then
     resolved "temp" "Processortemperatuur weer normaal (${temp} °C)."
   fi
+
+  # Systeemcijfers voor de site; een fout hierin mag de bewaking nooit stoppen.
+  systeem || log "systeemcijfers konden niet worden geschreven"
 
   sleep "$INTERVAL"
 done
