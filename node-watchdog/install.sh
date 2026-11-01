@@ -9,8 +9,8 @@ IMG=cryptocode/node-watchdog:1.0
 
 echo "== containernamen die de watchdog verwacht:"
 for c in bitcoin_app_1 bitcoin-cash-node_bitcoind_1 doge-dogecoin-node_dogecoind_1 doge-litecoin-node_litecoind_1 \
-         doge-pepecoin-node_pepecoind_1 bassin_ckpool_1 btc-rental bch-rental sslabs-solostrike-cash_pool_1 \
-         doge-public doge-public-rental doge-dogecoin-solo_app_1; do
+         doge-pepecoin-node_pepecoind_1 doge-soqucoin-node_soqucoind_1 bassin_ckpool_1 btc-rental bch-rental \
+         sslabs-solostrike-cash_pool_1 doge-public doge-public-rental doge-dogecoin-solo_app_1; do
   if docker inspect "$c" >/dev/null 2>&1; then echo "  ok   $c"; else echo "  MIST $c"; fi
 done
 

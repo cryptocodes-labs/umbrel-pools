@@ -364,7 +364,8 @@ function limited(req) {
 // gaan alleen getallen door, veld voor veld; wat geen getal is, wordt null.
 // Ouder dan tien minuten heet niet meer actueel (watchdog weg of gestopt).
 const SYSTEEM_FILE = process.env.SYSTEEM_FILE || '/src/systeem/systeem.json';
-const NODE_MUNTEN = ['BTC', 'BCH', 'LTC', 'DOGE', 'PEP'];
+// SOQ sinds 01-11-2026 (de node-watchdog meet de Soqucoin-node mee).
+const NODE_MUNTEN = ['BTC', 'BCH', 'LTC', 'DOGE', 'PEP', 'SOQ'];
 function publicSysteem() {
   let raw;
   try {

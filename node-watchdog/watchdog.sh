@@ -9,7 +9,7 @@
 # groeiden met 5 MB/s.
 #
 # Wat dit doet, elke INTERVAL seconden:
-#   * nodes (BTC, BCH, DOGE, LTC, PEP): reageert er een FAILS_BEFORE_RESTART
+#   * nodes (BTC, BCH, DOGE, LTC, PEP, SOQ): reageert er een FAILS_BEFORE_RESTART
 #     keer achter elkaar niet terwijl zijn container wel draait, dan
 #     `docker restart` van die container — hooguit één keer per
 #     RESTART_COOLDOWN per node, dus nooit een herstartlus. Een container die
@@ -154,7 +154,7 @@ logguard() {
 PUBLIEK=$STATE/publiek
 mkdir -p "$PUBLIEK"
 # munt:container:map-in-/appdata
-NODE_CTRS="BTC:bitcoin_app_1:bitcoin BCH:bitcoin-cash-node_bitcoind_1:bitcoin-cash-node LTC:doge-litecoin-node_litecoind_1:doge-litecoin-node DOGE:doge-dogecoin-node_dogecoind_1:doge-dogecoin-node PEP:doge-pepecoin-node_pepecoind_1:doge-pepecoin-node"
+NODE_CTRS="BTC:bitcoin_app_1:bitcoin BCH:bitcoin-cash-node_bitcoind_1:bitcoin-cash-node LTC:doge-litecoin-node_litecoind_1:doge-litecoin-node DOGE:doge-dogecoin-node_dogecoind_1:doge-dogecoin-node PEP:doge-pepecoin-node_pepecoind_1:doge-pepecoin-node SOQ:doge-soqucoin-node_soqucoind_1:doge-soqucoin-node"
 declare -A node_ram node_schijf
 ronde=0
 prev_tot="" prev_idle="" prev_e="" prev_et=""
@@ -231,8 +231,8 @@ systeem() {
 
 log "node-watchdog gestart (interval ${INTERVAL}s, herstart na ${FAILS_BEFORE_RESTART} fouten, cooldown ${RESTART_COOLDOWN}s)"
 for c in bitcoin_app_1 bitcoin-cash-node_bitcoind_1 doge-dogecoin-node_dogecoind_1 doge-litecoin-node_litecoind_1 \
-         doge-pepecoin-node_pepecoind_1 bassin_ckpool_1 btc-rental bch-rental sslabs-solostrike-cash_pool_1 \
-         doge-public doge-public-rental doge-dogecoin-solo_app_1; do
+         doge-pepecoin-node_pepecoind_1 doge-soqucoin-node_soqucoind_1 bassin_ckpool_1 btc-rental bch-rental \
+         sslabs-solostrike-cash_pool_1 doge-public doge-public-rental doge-dogecoin-solo_app_1; do
   if exists "$c"; then log "  gevonden: $c"; else log "  niet gevonden: $c (wordt overgeslagen)"; fi
 done
 
@@ -243,13 +243,18 @@ while true; do
   node "BTC-node" bitcoin_app_1 "$btc"
   if port_open 10.21.21.50 8332; then bch=1; else bch=0; fi
   node "BCH-node" bitcoin-cash-node_bitcoind_1 "$bch"
-  # DOGE, LTC, PEP: eigen apps met een docker-healthcheck (getbestblockhash).
+  # DOGE, LTC, PEP, SOQ: eigen apps met een docker-healthcheck (getbestblockhash).
   if healthy doge-dogecoin-node_dogecoind_1; then d=1; else d=0; fi
   node "DOGE-node" doge-dogecoin-node_dogecoind_1 "$d"
   if healthy doge-litecoin-node_litecoind_1; then l=1; else l=0; fi
   node "LTC-node" doge-litecoin-node_litecoind_1 "$l"
   if healthy doge-pepecoin-node_pepecoind_1; then p=1; else p=0; fi
   node "PEP-node" doge-pepecoin-node_pepecoind_1 "$p"
+  # SOQ sinds 01-11-2026: de openbare poorten 3335/3339 minen soqucoin mee.
+  # Valt soqucoind weg, dan laat de stratum SOQ uit het werk (LTC/DOGE/PEP
+  # lopen door), maar zonder herstart blijft SOQ uit tot iemand het ziet.
+  if healthy doge-soqucoin-node_soqucoind_1; then q=1; else q=0; fi
+  node "SOQ-node" doge-soqucoin-node_soqucoind_1 "$q"
 
   pool "BTC (3333)" bassin_ckpool_1
   pool "BTC-huur (3338)" btc-rental

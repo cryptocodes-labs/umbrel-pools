@@ -1,4 +1,4 @@
-# Cryptocode mining pools — hoe het staat (bijgewerkt 22 oktober 2026)
+# Cryptocode mining pools — hoe het staat (bijgewerkt 1 november 2026; poorttabel 3335/3339/3336/22557)
 
 Lees dit vóór je iets aan de pools, de Umbrel of de VPS verandert.
 
@@ -10,10 +10,10 @@ Lees dit vóór je iets aan de pools, de Umbrel of de VPS verandert.
 | 3338 | → :3338 | BTC solo **rental** — losse container `btc-rental` (mindiff 500k, startdiff 1M) | 1% → zelfde BTC-adres | ja |
 | 3334 | → :3335 | BCH solo — LoneStrike Cash (asicseer-pool `-B`) | 1% → bitcoincash:qppus6ldc7esd8x4lfq6yk98metwm6mg6czuhu4k8p | ja |
 | 3337 | → :3337 | BCH solo **rental** — losse container `bch-rental` (mindiff 500k, startdiff 1M) | 1% → zelfde BCH-adres | ja |
-| 3335 | → :22559 | DOGE+LTC(+PEP) **publiek** — losse container `doge-public` (image cryptocode/doge-public:1.8.0 sinds 16 okt, PUBLIC_MERGED=1), username `LTC.DOGE[.PEP][.rig]` | 1% op LTC → LdAEjW…, DOGE → DFabbT3…, PEP → Pfe2U3… | ja (live 26 sep, PEP 16 okt) |
-| 3339 | → :22562 | DOGE+LTC(+PEP) **publiek rental** — losse container `doge-public-rental` (zelfde image, START_DIFFICULTY 1048576, MIN 65536), username `LTC.DOGE[.PEP][.rig]` | 1% op LTC, DOGE en PEP | ja (live 26 sep, PEP 16 okt) |
-| 3336 | → :22558 | DOGE+LTC rental (umbrel-dogecoin 1.6.1, LOCK_PAYOUT_ADDRESS=1) | – | alleen tijdens eigen huurorder |
-| niet doorgestuurd | :22557 | DOGE+LTC thuispoort (app 1.6.1), gelockt op eigen adressen | – | nee |
+| 3335 | → :22559 | DOGE+LTC(+PEP)(+SOQ) **publiek** — losse container `doge-public` (ghcr.io/cryptocodes-labs/umbrel-dogecoin-stratum:1.10.0@sha256:fc1839d3… sinds 1 nov, PUBLIC_MERGED=1, ADD_SOQ), username `LTC.DOGE[.PEP][.SOQ][.rig]` | 1% op LTC → LdAEjW…, DOGE → DFabbT3…, PEP → Pfe2U3…, SOQ → sq1p9udw… | ja (live 26 sep, PEP 16 okt, SOQ 1 nov) |
+| 3339 | → :22562 | DOGE+LTC(+PEP)(+SOQ) **publiek rental** — losse container `doge-public-rental` (zelfde image, START_DIFFICULTY 1048576, MIN 65536), username `LTC.DOGE[.PEP][.SOQ][.rig]` | 1% op LTC, DOGE, PEP en SOQ | ja (live 26 sep, PEP 16 okt, SOQ 1 nov) |
+| 3336 | → :22558 | DOGE+LTC+PEP+SOQ privé-huurpoort (app DOGE+LTC+PEP+SOQ 1.10.0, RENTED_STRATUM_PORT, LOCK_PAYOUT_ADDRESS=1): elke naam mag, alles betaalt de adressen uit .env | – | ja, voor eigen huur |
+| niet doorgestuurd | :22557 | DOGE+LTC+PEP+SOQ thuispoort (app 1.10.0), gelockt op eigen adressen | – | nee |
 | niet doorgestuurd | :33333 | LoneStrike SV2 — betaalt altijd één vast adres | – | nooit openbaar |
 
 Nooit doorsturen: RPC-poorten 8332 (BTC/BCH), 9332 (LTC), 22555 (DOGE), dashboards.
