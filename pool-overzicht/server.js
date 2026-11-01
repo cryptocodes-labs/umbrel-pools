@@ -150,6 +150,9 @@ function asicseer(p) {
   };
 }
 
+/** De keten `naam` uit de status van de stratum (chains[], stratum 1.9.2+), of null. */
+const ketenVan = (s, naam) => (Array.isArray(s.chains) ? s.chains : []).find((c) => c && c.name === naam) || null;
+
 async function doge(p) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 4000);
@@ -179,14 +182,21 @@ async function doge(p) {
       // Pepecoin (alleen LTC+DOGE-pools die het hebben ingesteld). online = pepecoind
       // antwoordt en PEP zit in het werk. hashrate/besteShare: alleen van miners MET
       // een PEP-adres, en alleen als de stratum dat per worker meldt.
+      // Sinds 01-11-2026 eerst uit chains[] van de stratum zelf (stratum 1.9.2+):
+      // die rekent per keten de hashrate en beste share van wie hem echt mined.
+      // Op de privépool mined iedereen alles (de adressen staan vast in .env),
+      // maar zijn workers hebben geen eigen PEP-adres; per worker tellen gaf daar 0.
       pep: s.pep ? (() => {
         const perWorker = lijst.some((w) => w.pep !== undefined);
         const met = lijst.filter((w) => w.pep === true);
+        const keten = ketenVan(s, 'PEP');
         return {
           online: !s.pep.error && !s.pep.unavailableSince,
           hoogte: s.pep.height ?? null,
-          hashrate: perWorker ? met.reduce((t, w) => t + w.hashrate, 0) : null,
-          besteShare: perWorker && met.length ? Math.max(...met.map((w) => w.besteShare || 0)) : null,
+          hashrate: keten && Number.isFinite(Number(keten.hashrate)) ? Number(keten.hashrate)
+            : perWorker ? met.reduce((t, w) => t + w.hashrate, 0) : null,
+          besteShare: keten && Number(keten.best) > 0 ? Number(keten.best)
+            : perWorker && met.length ? Math.max(...met.map((w) => w.besteShare || 0)) : null,
         };
       })() : null,
       // Soqucoin (sinds 01-11-2026, stratum 1.10.0), precies zoals PEP. De
@@ -195,12 +205,14 @@ async function doge(p) {
       soq: s.soq ? (() => {
         const perWorker = lijst.some((w) => w.soq !== undefined);
         const met = lijst.filter((w) => w.soq === true);
-        const keten = (s.chains || []).find((c) => c && c.name === 'SOQ');
+        const keten = ketenVan(s, 'SOQ');
         return {
           online: !s.soq.error && !s.soq.unavailableSince,
           hoogte: s.soq.height ?? null,
-          hashrate: perWorker ? met.reduce((t, w) => t + w.hashrate, 0) : null,
-          besteShare: perWorker && met.length ? Math.max(...met.map((w) => w.besteShare || 0)) : null,
+          hashrate: keten && Number.isFinite(Number(keten.hashrate)) ? Number(keten.hashrate)
+            : perWorker ? met.reduce((t, w) => t + w.hashrate, 0) : null,
+          besteShare: keten && Number(keten.best) > 0 ? Number(keten.best)
+            : perWorker && met.length ? Math.max(...met.map((w) => w.besteShare || 0)) : null,
           netwerkDiff: Number(keten?.difficulty) > 0 ? Number(keten.difficulty) : null,
         };
       })() : null,
@@ -324,7 +336,11 @@ tr.w td{border-top:none;padding:2px 6px;font-size:13px;color:#ccc}.r{text-align:
 // bezoekers er ook zijn.
 // ---------------------------------------------------------------------------
 const PUBLIC_IDS = ['btc', 'btc-rental', 'bch', 'bch-rental', 'doge-public', 'doge-rental'];
-const CHAIN_OF = { btc: 'BTC', 'btc-rental': 'BTC', bch: 'BCH', 'bch-rental': 'BCH', 'doge-public': 'LTC+DOGE', 'doge-rental': 'LTC+DOGE' };
+const CHAIN_OF = { btc: 'BTC', 'btc-rental': 'BTC', bch: 'BCH', 'bch-rental': 'BCH', 'doge-public': 'LTC+DOGE', 'doge-rental': 'LTC+DOGE', 'doge-private': 'LTC+DOGE' };
+// /public/summary toont sinds 01-11-2026 ook de totalen van de privépool
+// (Andreas: "mijn huurkracht telt immers ook mee"): poort null, soort 'prive'.
+// Alleen getallen; zoeken op adres (publicMiner) blijft bij PUBLIC_IDS.
+const SUMMARY_IDS = [...PUBLIC_IDS, 'doge-private'];
 
 let cache = null;
 let cacheAt = 0;
@@ -343,11 +359,11 @@ const norm = (a) => String(a || '').trim().replace(/^bitcoincash:/i, '').toLower
 function publicSummary(d) {
   return {
     tijd: d.tijd,
-    pools: d.pools.filter((p) => PUBLIC_IDS.includes(p.id)).map((p) => ({
+    pools: d.pools.filter((p) => SUMMARY_IDS.includes(p.id)).map((p) => ({
       id: p.id,
       chain: CHAIN_OF[p.id],
-      poort: Number(p.poort),
-      soort: p.id.endsWith('rental') ? 'rental' : 'home',
+      poort: p.id === 'doge-private' ? null : Number(p.poort),
+      soort: p.id === 'doge-private' ? 'prive' : p.id.endsWith('rental') ? 'rental' : 'home',
       online: p.status !== 'onbereikbaar',
       hashrate: p.hashrate || 0,
       workers: p.workers || 0,
