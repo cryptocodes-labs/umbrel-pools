@@ -332,8 +332,10 @@ tr.w td{border-top:none;padding:2px 6px;font-size:13px;color:#ccc}.r{text-align:
 // Publiek (via de VPS op https://pool.cryptocodes.eu/public/...)
 //
 // Alleen totalen, en één adres tegelijk op verzoek. Nooit een lijst van alle
-// adressen, nooit IP's, nooit de privé pool. Eén verzameling per 30 s, hoeveel
-// bezoekers er ook zijn.
+// adressen, nooit IP's. Van de privé pool alleen totalen (hashrate, workers,
+// beste share, blokken, pep/soq) en de gevonden blokken; nooit adressen,
+// workernamen of poort, en zoeken op adres raakt hem nooit. Eén verzameling
+// per 30 s, hoeveel bezoekers er ook zijn.
 // ---------------------------------------------------------------------------
 const PUBLIC_IDS = ['btc', 'btc-rental', 'bch', 'bch-rental', 'doge-public', 'doge-rental'];
 const CHAIN_OF = { btc: 'BTC', 'btc-rental': 'BTC', bch: 'BCH', 'bch-rental': 'BCH', 'doge-public': 'LTC+DOGE', 'doge-rental': 'LTC+DOGE', 'doge-private': 'LTC+DOGE' };
@@ -486,7 +488,10 @@ http.createServer(async (req, res) => {
       }
       const d = await cached();
       if (url.pathname === '/public/summary') return send(res, 200, publicSummary(d));
-      const m = /^\/public\/miner\/([A-Za-z0-9:]{20,100})$/.exec(decodeURIComponent(url.pathname));
+      // Een kapotte procentcodering (%C3…) is een fout van de vrager: 400, geen 500.
+      let pad;
+      try { pad = decodeURIComponent(url.pathname); } catch { return send(res, 400, { fout: 'ongeldig pad' }, { 'cache-control': 'no-store' }); }
+      const m = /^\/public\/miner\/([A-Za-z0-9:]{20,100})$/.exec(pad);
       if (m) return send(res, 200, publicMiner(d, m[1]));
       return send(res, 404, { fout: 'onbekend' });
     }
@@ -498,7 +503,10 @@ http.createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(page(d));
   } catch (err) {
-    res.writeHead(500, { 'content-type': 'text/plain' });
-    res.end(err.message);
+    // Naar buiten nooit de fouttekst zelf: die kan ooit een interne naam of
+    // pad bevatten. In de log staat hij wel.
+    console.error('fout bij', String(req.url || '').slice(0, 200), err && err.message);
+    if (!res.headersSent) send(res, 500, { fout: 'tijdelijk niet beschikbaar' }, { 'cache-control': 'no-store' });
+    else res.end();
   }
 }).listen(PORT, '0.0.0.0', () => console.log(`pool-overzicht op :${PORT}`));

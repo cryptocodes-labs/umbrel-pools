@@ -13,6 +13,8 @@ echo "netwerk publiek: $NET   prive container: ${PRIV:-niet gevonden} ($PRIVNET)
 # Pepecoin-netwerkcijfers (alleen lezen): dezelfde RPC-gegevens als de pools, uit de
 # .env van de privépool, in een eigen bestand (600) zodat niets op het scherm komt.
 PEPENV="$DIR/pep.env"
+# Eerst leeg met 600, dan vullen: zo is het bestand nooit even leesbaar.
+install -m 600 /dev/null "$PEPENV"
 grep -E '^PEP_RPC_(HOST|PORT|USER|PASSWORD)=' "$HOME/umbrel/app-data/doge-dogecoin-solo/.env" > "$PEPENV" || true
 chmod 600 "$PEPENV"
 echo "Pepecoin-gegevens: $(grep -c . "$PEPENV") van 4 regels"
@@ -44,14 +46,17 @@ if [ -n "$PRIVNET" ] && [ "$PRIVNET" != "$NET" ]; then
 fi
 
 sleep 3
-curl -s http://localhost:22570/api > /tmp/overzicht.json
-python3 - <<'PY'
-import json
-d = json.load(open("/tmp/overzicht.json"))
+# Het interne overzicht (workernamen) niet in /tmp, waar iedereen kan lezen.
+OVERZICHT=$(mktemp "$DIR/overzicht.XXXXXX.json")
+curl -s http://localhost:22570/api > "$OVERZICHT"
+OVERZICHT="$OVERZICHT" python3 - <<'PY'
+import json, os
+d = json.load(open(os.environ["OVERZICHT"]))
 for p in d["pools"]:
     print("%-18s %-12s %3s workers  %s" % (p["naam"], p["status"], p["workers"], p.get("fout", "")))
 PY
 echo
+rm -f "$OVERZICHT"
 echo "Open: http://192.168.1.149:22570"
 curl -s http://localhost:22570/public/summary | python3 -c "import json,sys; d=json.load(sys.stdin); [print(p['id'], 'pep:', json.dumps(p.get('pep')), 'soq:', json.dumps(p.get('soq'))) for p in d['pools'] if p.get('pep') or p.get('soq')]; print('gevonden:', json.dumps(d.get('gevonden')))"
 echo
