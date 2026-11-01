@@ -16,6 +16,11 @@ PEPENV="$DIR/pep.env"
 grep -E '^PEP_RPC_(HOST|PORT|USER|PASSWORD)=' "$HOME/umbrel/app-data/doge-dogecoin-solo/.env" > "$PEPENV" || true
 chmod 600 "$PEPENV"
 echo "Pepecoin-gegevens: $(grep -c . "$PEPENV") van 4 regels"
+# Soqucoin idem (sinds 01-11-2026): alleen getnetworkhashps, voor de kans per dag.
+SOQENV="$DIR/soq.env"
+install -m 600 /dev/null "$SOQENV"
+grep -E '^SOQ_RPC_(HOST|PORT|USER|PASSWORD)=.' "$HOME/umbrel/app-data/doge-dogecoin-solo/.env" > "$SOQENV" || true
+echo "Soqucoin-gegevens: $(grep -c . "$SOQENV") van 4 regels"
 
 # Systeemcijfers van de node-watchdog (/public/systeem); de map bestaat ook als de
 # watchdog nog niet is bijgewerkt, dan geeft de route gewoon 404.
@@ -25,7 +30,7 @@ sudo docker rm -f pool-overzicht >/dev/null 2>&1 || true
 sudo docker run -d --name pool-overzicht --restart unless-stopped \
   --network "$NET" -p 22570:3000 --user 0 \
   -e DOGE_PRIVATE_URL="http://$PRIV:3000/api/status" \
-  --env-file "$PEPENV" \
+  --env-file "$PEPENV" --env-file "$SOQENV" \
   -v "$DIR/server.js":/app/overzicht.js:ro \
   -v "$HOME/umbrel/app-data/bassin/data":/src/bassin:ro \
   -v "$HOME/btc-rental/logs":/src/btc-rental:ro \
@@ -48,6 +53,6 @@ for p in d["pools"]:
 PY
 echo
 echo "Open: http://192.168.1.149:22570"
-curl -s http://localhost:22570/public/summary | python3 -c "import json,sys; [print(p['id'], 'pep:', json.dumps(p.get('pep'))) for p in json.load(sys.stdin)['pools'] if p.get('pep')]"
+curl -s http://localhost:22570/public/summary | python3 -c "import json,sys; d=json.load(sys.stdin); [print(p['id'], 'pep:', json.dumps(p.get('pep')), 'soq:', json.dumps(p.get('soq'))) for p in d['pools'] if p.get('pep') or p.get('soq')]; print('gevonden:', json.dumps(d.get('gevonden')))"
 echo
 curl -s http://localhost:22570/public/systeem | head -c 400; echo

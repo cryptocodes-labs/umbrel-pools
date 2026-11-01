@@ -161,9 +161,11 @@ async function doge(p) {
       const soort = w.entry === 'rented' ? ' (huur)' : '';
       // pep: true/false zodra de stratum per worker pepPayoutAddress meldt; tot dan onbekend (undefined).
       const pep = 'pepPayoutAddress' in w ? Boolean(w.pepPayoutAddress) : undefined;
-      return { naam: (naam || '-') + soort, adres: shortAddr(adres || w.payoutAddress), vol: w.payoutAddress || adres, hashrate: w.hashrate || 0, besteShare: w.bestShareDiff ?? null, laatsteShare: w.lastShareAt || null, pep,
+      // soq: idem voor Soqucoin (stratum 1.10.0+ meldt soqPayoutAddress per worker).
+      const soq = 'soqPayoutAddress' in w ? Boolean(w.soqPayoutAddress) : undefined;
+      return { naam: (naam || '-') + soort, adres: shortAddr(adres || w.payoutAddress), vol: w.payoutAddress || adres, hashrate: w.hashrate || 0, besteShare: w.bestShareDiff ?? null, laatsteShare: w.lastShareAt || null, pep, soq,
         // Alleen intern, om te kunnen zoeken op elk eigen adres (stratum 1.8.1+); gaan nooit naar buiten.
-        ltcVol: w.ltcPayoutAddress || null, pepVol: w.pepPayoutAddress || null };
+        ltcVol: w.ltcPayoutAddress || null, pepVol: w.pepPayoutAddress || null, soqVol: w.soqPayoutAddress || null };
     }).sort((a, b) => b.hashrate - a.hashrate);
     return {
       alle: lijst,
@@ -187,24 +189,49 @@ async function doge(p) {
           besteShare: perWorker && met.length ? Math.max(...met.map((w) => w.besteShare || 0)) : null,
         };
       })() : null,
+      // Soqucoin (sinds 01-11-2026, stratum 1.10.0), precies zoals PEP. De
+      // moeilijkheid staat al in de status (chains[]: die van het SOQ-blok in
+      // het werk); de netwerkhashrate komt via soqNetwerk() erbij.
+      soq: s.soq ? (() => {
+        const perWorker = lijst.some((w) => w.soq !== undefined);
+        const met = lijst.filter((w) => w.soq === true);
+        const keten = (s.chains || []).find((c) => c && c.name === 'SOQ');
+        return {
+          online: !s.soq.error && !s.soq.unavailableSince,
+          hoogte: s.soq.height ?? null,
+          hashrate: perWorker ? met.reduce((t, w) => t + w.hashrate, 0) : null,
+          besteShare: perWorker && met.length ? Math.max(...met.map((w) => w.besteShare || 0)) : null,
+          netwerkDiff: Number(keten?.difficulty) > 0 ? Number(keten.difficulty) : null,
+        };
+      })() : null,
+      // Gevonden en door de node aanvaarde blokken, op elke chain van deze pool.
+      // Alleen wat publiek op de chain staat; worker en adres blijven hier.
+      gevondenBlokken: (Array.isArray(s.blocks) ? s.blocks : [])
+        .filter((b) => b && b.accepted === true && /^[0-9a-f]{64}$/.test(String(b.hash)) && ['LTC', 'DOGE', 'PEP', 'SOQ'].includes(b.chain))
+        .map((b) => ({ munt: b.chain, hoogte: Number(b.height) || null, hash: b.hash, tijd: Number(b.at) || null,
+          beloning: Number(b.reward) > 0 ? Number(b.reward) / 1e8 : null })),
       lijst,
     };
   } finally { clearTimeout(t); }
 }
 
-// Pepecoin-netwerk (alleen lezen): moeilijkheid en hashrate over ~1 dag.
-const PEP_RPC = process.env.PEP_RPC_HOST && process.env.PEP_RPC_PASSWORD
-  ? { url: `http://${process.env.PEP_RPC_HOST}:${process.env.PEP_RPC_PORT || 33873}/`,
-      auth: 'Basic ' + Buffer.from(`${process.env.PEP_RPC_USER || 'umbrel'}:${process.env.PEP_RPC_PASSWORD}`).toString('base64') }
+// Pepecoin- en Soqucoin-netwerk (alleen lezen): moeilijkheid en hashrate over ~1 dag.
+const rpcCfg = (pre, poort) => process.env[`${pre}_RPC_HOST`] && process.env[`${pre}_RPC_PASSWORD`]
+  ? { url: `http://${process.env[`${pre}_RPC_HOST`]}:${process.env[`${pre}_RPC_PORT`] || poort}/`,
+      auth: 'Basic ' + Buffer.from(`${process.env[`${pre}_RPC_USER`] || 'umbrel'}:${process.env[`${pre}_RPC_PASSWORD`]}`).toString('base64') }
   : null;
+const PEP_RPC = rpcCfg('PEP', 33873);
+const SOQ_RPC = rpcCfg('SOQ', 33389);
 let pepNet = { netwerkDiff: null, netwerkHashrate: null };
 let pepNetAt = 0;
-async function pepRpc(method, params = []) {
+let soqNet = { netwerkHashrate: null };
+let soqNetAt = 0;
+async function pepRpc(method, params = [], cfg = PEP_RPC) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 4000);
   try {
-    const r = await fetch(PEP_RPC.url, { method: 'POST', signal: ctl.signal,
-      headers: { 'content-type': 'text/plain', authorization: PEP_RPC.auth },
+    const r = await fetch(cfg.url, { method: 'POST', signal: ctl.signal,
+      headers: { 'content-type': 'text/plain', authorization: cfg.auth },
       body: JSON.stringify({ jsonrpc: '1.0', id: 'overzicht', method, params }) });
     const j = await r.json();
     if (j.error) throw new Error(j.error.message || 'rpc-fout');
@@ -223,6 +250,18 @@ async function pepNetwerk() {
   }
   return pepNet;
 }
+// Alleen de hashrate: de moeilijkheid geeft de stratumstatus al (zie soq in doge()).
+async function soqNetwerk() {
+  if (!SOQ_RPC) return soqNet;
+  if (Date.now() - soqNetAt < 5 * 60 * 1000) return soqNet;
+  soqNetAt = Date.now();
+  try {
+    soqNet = { netwerkHashrate: Number(await pepRpc('getnetworkhashps', [1440], SOQ_RPC)) || null };
+  } catch (_) {
+    soqNet = { netwerkHashrate: null };
+  }
+  return soqNet;
+}
 
 async function collect() {
   const now = Date.now();
@@ -239,6 +278,8 @@ async function collect() {
   }
   const net = await pepNetwerk();
   for (const p of out) if (p.pep) Object.assign(p.pep, net);
+  const sNet = await soqNetwerk();
+  for (const p of out) if (p.soq) Object.assign(p.soq, sNet);
   return { tijd: now, pools: out };
 }
 
@@ -314,7 +355,19 @@ function publicSummary(d) {
       blokken: p.blokken ?? null,
       pep: p.pep ? { online: p.pep.online, hashrate: p.pep.hashrate, besteShare: p.pep.besteShare,
         hoogte: p.pep.hoogte ?? null, netwerkDiff: p.pep.netwerkDiff ?? null, netwerkHashrate: p.pep.netwerkHashrate ?? null } : null,
+      soq: p.soq ? { online: p.soq.online, hashrate: p.soq.hashrate, besteShare: p.soq.besteShare,
+        hoogte: p.soq.hoogte ?? null, netwerkDiff: p.soq.netwerkDiff ?? null, netwerkHashrate: p.soq.netwerkHashrate ?? null } : null,
     })),
+    // Gevonden blokken van de LTC+DOGE-pools, ook de privépool (sinds 01-11-2026):
+    // munt, hoogte, hash, tijd en beloning staan sowieso openbaar op de chain.
+    // bron zegt alleen welke poort: home (3335), rental (3339) of prive (eigen
+    // miners en eigen huur). Nooit worker, adres of IP. Nieuwste eerst, max 20.
+    gevonden: d.pools
+      .filter((p) => Array.isArray(p.gevondenBlokken))
+      .flatMap((p) => p.gevondenBlokken.map((b) => ({ ...b,
+        bron: p.id === 'doge-private' ? 'prive' : p.id.endsWith('rental') ? 'rental' : 'home' })))
+      .sort((a, b) => (b.tijd || 0) - (a.tijd || 0))
+      .slice(0, 20),
   };
 }
 
@@ -324,8 +377,8 @@ function publicMiner(d, addr) {
   for (const p of d.pools) {
     if (!PUBLIC_IDS.includes(p.id)) continue;
     for (const w of p.alle || []) {
-      // Zoeken op het DOGE-, LTC- of PEP-adres van de worker (BTC/BCH: het ene uitbetaaladres).
-      if (![w.vol, w.ltcVol, w.pepVol].some((a) => a && norm(a) === n)) continue;
+      // Zoeken op het DOGE-, LTC-, PEP- of SOQ-adres van de worker (BTC/BCH: het ene uitbetaaladres).
+      if (![w.vol, w.ltcVol, w.pepVol, w.soqVol].some((a) => a && norm(a) === n)) continue;
       workers.push({
         pool: p.id,
         chain: CHAIN_OF[p.id],
@@ -335,6 +388,7 @@ function publicMiner(d, addr) {
         besteShare: w.besteShare ?? null,
         laatsteShare: w.laatsteShare ?? null,
         pep: typeof w.pep === 'boolean' ? w.pep : null,
+        soq: typeof w.soq === 'boolean' ? w.soq : null,
       });
     }
   }
@@ -423,7 +477,7 @@ http.createServer(async (req, res) => {
     const d = await cached();
     if (url.pathname.startsWith('/api')) {
       res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify(d, (k, v) => (['alle', 'vol', 'ltcVol', 'pepVol'].includes(k) ? undefined : v)));
+      return res.end(JSON.stringify(d, (k, v) => (['alle', 'vol', 'ltcVol', 'pepVol', 'soqVol'].includes(k) ? undefined : v)));
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     res.end(page(d));
